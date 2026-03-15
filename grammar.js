@@ -2,6 +2,7 @@
  * @file BMB language grammar for tree-sitter
  * @author BMB Language Team
  * @license MIT
+ * @version 0.3.0 — synced with BMB v0.96
  */
 
 /// <reference types="tree-sitter-cli/dsl" />
@@ -163,6 +164,8 @@ module.exports = grammar({
     ),
 
     parameter: $ => seq(
+      optional('own'),
+      optional('mut'),
       field('name', $.identifier),
       ':',
       field('type', $._type),
@@ -172,9 +175,12 @@ module.exports = grammar({
     _type: $ => choice(
       $.primitive_type,
       $.unit_type,
+      $.pointer_type,
       $.reference_type,
       $.mutable_reference_type,
       $.array_type,
+      $.tuple_type,
+      $.nullable_type,
       $.refined_type,
       $.named_type,
     ),
@@ -182,10 +188,13 @@ module.exports = grammar({
     primitive_type: $ => choice('i32', 'i64', 'f64', 'bool', 'String'),
     unit_type: $ => seq('(', ')'),
     named_type: $ => $.identifier,
+    pointer_type: $ => seq('*', $._type),
+    nullable_type: $ => seq($._type, '?'),
 
     reference_type: $ => seq('&', $._type),
     mutable_reference_type: $ => seq('&', 'mut', $._type),
     array_type: $ => seq('[', $._type, ';', $.integer_literal, ']'),
+    tuple_type: $ => seq('(', $._type, repeat1(seq(',', $._type)), optional(','), ')'),
 
     refined_type: $ => seq(
       choice('i32', 'i64', 'f64', 'bool'),
@@ -207,6 +216,10 @@ module.exports = grammar({
       $.match_expression,
       $.while_expression,
       $.for_expression,
+      $.loop_expression,
+      $.return_expression,
+      $.break_expression,
+      $.continue_expression,
       $.block_expression,
       $._binary_expression,
     ),
@@ -214,10 +227,15 @@ module.exports = grammar({
     if_expression: $ => seq(
       'if',
       field('condition', $._expression),
-      'then',
-      field('then', $._expression),
-      'else',
-      field('else', $._expression),
+      choice(
+        // Both styles: `if cond then a else b` and `if cond { a } else { b }`
+        seq('then', field('then', $._expression), 'else', field('else', $._expression)),
+        seq('{', field('then', optional($._expression)), '}',
+            optional(seq('else', choice(
+              seq('{', field('else', optional($._expression)), '}'),
+              $.if_expression,
+            )))),
+      ),
     ),
 
     let_expression: $ => seq(
@@ -255,7 +273,8 @@ module.exports = grammar({
       'while',
       field('condition', $._expression),
       '{',
-      field('body', $._expression),
+      repeat(seq($._block_statement, ';')),
+      optional($._expression),
       '}',
     ),
 
@@ -265,9 +284,22 @@ module.exports = grammar({
       'in',
       field('iterator', $._expression),
       '{',
-      field('body', $._expression),
+      repeat(seq($._block_statement, ';')),
+      optional($._expression),
       '}',
     ),
+
+    loop_expression: $ => seq(
+      'loop',
+      '{',
+      repeat(seq($._block_statement, ';')),
+      optional($._expression),
+      '}',
+    ),
+
+    return_expression: $ => prec.right(seq('return', optional($._expression))),
+    break_expression: $ => prec.right(seq('break', optional($._expression))),
+    continue_expression: $ => 'continue',
 
     block_expression: $ => seq(
       '{',
@@ -277,8 +309,17 @@ module.exports = grammar({
     ),
 
     _block_statement: $ => choice(
+      $.set_statement,
       $.assignment,
       $._expression,
+    ),
+
+    // set obj.field = val  /  set arr[i] = val
+    set_statement: $ => seq(
+      'set',
+      field('target', choice($.field_access, $.index_expression)),
+      '=',
+      field('value', $._expression),
     ),
 
     assignment: $ => seq(
@@ -292,9 +333,14 @@ module.exports = grammar({
       $.or_expression,
       $.and_expression,
       $.comparison_expression,
+      $.bitwise_or_expression,
+      $.bitwise_xor_expression,
+      $.bitwise_and_expression,
+      $.shift_expression,
       $.range_expression,
       $.additive_expression,
       $.multiplicative_expression,
+      $.cast_expression,
       $._unary_expression,
     ),
 
@@ -316,22 +362,53 @@ module.exports = grammar({
       $._expression,
     )),
 
-    range_expression: $ => prec.left(4, seq(
+    bitwise_or_expression: $ => prec.left(4, seq(
+      $._expression,
+      'bor',
+      $._expression,
+    )),
+
+    bitwise_xor_expression: $ => prec.left(5, seq(
+      $._expression,
+      'bxor',
+      $._expression,
+    )),
+
+    bitwise_and_expression: $ => prec.left(6, seq(
+      $._expression,
+      'band',
+      $._expression,
+    )),
+
+    shift_expression: $ => prec.left(7, seq(
+      $._expression,
+      choice('<<', '>>'),
+      $._expression,
+    )),
+
+    range_expression: $ => prec.left(8, seq(
       $._expression,
       choice('..<', '..=', '..'),
       $._expression,
     )),
 
-    additive_expression: $ => prec.left(5, seq(
+    additive_expression: $ => prec.left(9, seq(
       $._expression,
       choice('+', '-'),
       $._expression,
     )),
 
-    multiplicative_expression: $ => prec.left(6, seq(
+    multiplicative_expression: $ => prec.left(10, seq(
       $._expression,
       choice('*', '/', '%'),
       $._expression,
+    )),
+
+    // Type cast: expr as Type
+    cast_expression: $ => prec.left(11, seq(
+      $._expression,
+      'as',
+      $._type,
     )),
 
     // Unary expressions
@@ -344,11 +421,11 @@ module.exports = grammar({
       $._postfix_expression,
     ),
 
-    negation_expression: $ => prec(7, seq('-', $._unary_expression)),
-    not_expression: $ => prec(7, seq('not', $._unary_expression)),
-    reference_expression: $ => prec(7, seq('&', $._unary_expression)),
-    mutable_reference_expression: $ => prec(7, seq('&', 'mut', $._unary_expression)),
-    dereference_expression: $ => prec(7, seq('*', $._unary_expression)),
+    negation_expression: $ => prec(12, seq('-', $._unary_expression)),
+    not_expression: $ => prec(12, seq('not', $._unary_expression)),
+    reference_expression: $ => prec(12, seq('&', $._unary_expression)),
+    mutable_reference_expression: $ => prec(12, seq('&', 'mut', $._unary_expression)),
+    dereference_expression: $ => prec(12, seq('*', $._unary_expression)),
 
     // Postfix expressions
     _postfix_expression: $ => choice(
@@ -361,7 +438,7 @@ module.exports = grammar({
       $._primary_expression,
     ),
 
-    method_call: $ => prec(8, seq(
+    method_call: $ => prec(13, seq(
       $._postfix_expression,
       '.',
       field('method', $.identifier),
@@ -370,20 +447,20 @@ module.exports = grammar({
       ')',
     )),
 
-    field_access: $ => prec(8, seq(
+    field_access: $ => prec(13, seq(
       $._postfix_expression,
       '.',
       field('field', $.identifier),
     )),
 
-    index_expression: $ => prec(8, seq(
+    index_expression: $ => prec(13, seq(
       $._postfix_expression,
       '[',
       field('index', $._expression),
       ']',
     )),
 
-    state_reference: $ => prec(8, seq(
+    state_reference: $ => prec(13, seq(
       $._postfix_expression,
       '.',
       choice('pre', 'post'),
@@ -421,16 +498,32 @@ module.exports = grammar({
       $.it,
       $.struct_init,
       $.array_literal,
+      $.lambda_expression,
       $.parenthesized_expression,
     ),
 
-    integer_literal: $ => /[0-9]+/,
+    integer_literal: $ => choice(
+      /[0-9]+/,
+      /0x[0-9a-fA-F]+/,
+      /0b[01]+/,
+    ),
     float_literal: $ => /[0-9]+\.[0-9]+/,
-    string_literal: $ => seq('"', /[^"]*/, '"'),
+    string_literal: $ => seq('"', /([^"\\]|\\.)*/, '"'),
     boolean_literal: $ => choice('true', 'false'),
     unit_literal: $ => seq('(', ')'),
     ret: $ => 'ret',
     it: $ => 'it',
+
+    // Lambda expression: fn |params| { body }
+    lambda_expression: $ => seq(
+      'fn',
+      '|',
+      optional($.parameters),
+      '|',
+      '{',
+      field('body', $._expression),
+      '}',
+    ),
 
     struct_init: $ => seq(
       'new',

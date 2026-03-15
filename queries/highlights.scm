@@ -1,4 +1,5 @@
 ; highlights.scm - BMB syntax highlighting queries
+; Synced with BMB v0.96
 
 ; Comments
 (line_comment) @comment
@@ -12,6 +13,10 @@
   "while"
   "for"
   "in"
+  "loop"
+  "break"
+  "continue"
+  "return"
 ] @keyword.control
 
 ; Keywords - Definition
@@ -21,7 +26,6 @@
   "struct"
   "enum"
   "use"
-  "mod"
   "new"
 ] @keyword
 
@@ -29,6 +33,7 @@
 [
   "pub"
   "mut"
+  "own"
 ] @keyword.modifier
 
 ; Keywords - Contract
@@ -43,12 +48,17 @@
   "and"
   "or"
   "not"
+  "band"
+  "bor"
+  "bxor"
+  "as"
 ] @keyword.operator
 
 ; Keywords - Special
 [
   "ret"
   "it"
+  "set"
 ] @keyword.special
 
 ; Types - Primitive
@@ -59,6 +69,12 @@
 
 ; Types - Unit
 (unit_type) @type.builtin
+
+; Types - Pointer
+(pointer_type) @type
+
+; Types - Nullable
+(nullable_type) @type
 
 ; Function definitions
 (function_definition
@@ -118,12 +134,17 @@
 (assignment
   name: (identifier) @variable)
 
+; Lambda expression
+(lambda_expression) @function
+
 ; Field access
 (field_access
   field: (identifier) @property)
 
-; Index access
-(index_expression) @punctuation.bracket
+; Set statement target
+(set_statement
+  target: (field_access
+    field: (identifier) @property))
 
 ; Literals
 (integer_literal) @number
@@ -145,6 +166,8 @@
   ">"
   "<="
   ">="
+  "<<"
+  ">>"
   "..<"
   "..="
   ".."
@@ -157,6 +180,7 @@
   ":"
   "::"
   "."
+  "|"
 ] @punctuation.delimiter
 
 ; Punctuation - Brackets
@@ -176,6 +200,7 @@
   "="
   "@"
   "&"
+  "?"
 ] @punctuation.special
 
 ; Attributes
